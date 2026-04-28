@@ -183,6 +183,26 @@ function renderIssues(issues) {
       card.appendChild(det);
     }
 
+    if (it.fix) {
+      const fixRow = document.createElement('div');
+      fixRow.className = 'issue-fix';
+      const fixCode = document.createElement('code');
+      fixCode.textContent = it.fix;
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'btn-copy-fix';
+      copyBtn.textContent = 'Copy';
+      copyBtn.title = 'Copy fix suggestion';
+      copyBtn.addEventListener('click', () => {
+        navigator.clipboard.writeText(it.fix).then(() => {
+          copyBtn.textContent = 'Copied!';
+          setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500);
+        });
+      });
+      fixRow.appendChild(fixCode);
+      fixRow.appendChild(copyBtn);
+      card.appendChild(fixRow);
+    }
+
     if (it.line) {
       const btn = document.createElement('button');
       btn.className = 'btn-goto';

@@ -1,5 +1,7 @@
 // validate_array.js  [P-19]
-// Rule 1: getPartyByQualifierIndex result must have an else { addParty(...) } branch.
+// Rule 1: getPartyByQualifierIndex result must have an else { addParty(...) } branch,
+//         BUT only when idx (or the qualifier) is used outside the if-block.
+//         If idx/qualifier is only used inside the condition, no addParty is needed.
 // Rule 2: Direct array access [literal] must be guarded by a preceding count check.
 window.validators.push(function validate_array(lines, raw, issues) {
 
@@ -44,14 +46,30 @@ window.validators.push(function validate_array(lines, raw, issues) {
       }
     }
 
+    // Only flag if idx or the qualifier is referenced OUTSIDE the if-block.
+    // If they're only used inside, missing addParty is harmless.
+    let usedOutside = false;
     if (!elseFound) {
+      const outerLimit = Math.min(lines.length, idxIfEnd + 20);
+      for (let j = idxIfEnd + 1; j < outerLimit; j++) {
+        const t = lines[j].trim();
+        if (/^\s*(if|for|while|return|\/\/)/.test(t) && !/\bidx\b/.test(t) && !new RegExp(`\\bParty::${qualifier}\\b`).test(t)) break;
+        if (/\bidx\b/.test(t) || new RegExp(`\\bParty::${qualifier}\\b`).test(t)) {
+          usedOutside = true;
+          break;
+        }
+      }
+    }
+
+    if (!elseFound && usedOutside) {
       issues.push({
-        type:     'Party – missing else addParty',
-        severity: 'warning',
-        rule:     'P-19',
-        line:     idxIfStart + 1,
-        snippet:  lines[idxIfStart].trim(),
-        detail:   `getPartyByQualifierIndex for Party::${qualifier}: the if(idx > -1) block assigns the party pointer but has no else { addParty(...) } branch.`
+        type:       'Party – missing else addParty',
+        severity:   'warning',
+        rule:       'P-19',
+        line:       idxIfStart + 1,
+        snippet:    lines[idxIfStart].trim(),
+        detail:     `getPartyByQualifierIndex for Party::${qualifier}: idx is used outside the if-block but there is no else { addParty(...) } branch to guarantee a valid index.`,
+        fix:        `else { ->partyDetails->addParty(Party::${qualifier}); }`
       });
     }
   }

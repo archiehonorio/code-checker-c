@@ -29,7 +29,7 @@ window.validators.push(function validate_memory(lines, raw, issues, ctx) {
           if (blockStack.length === 0) { inDestructor = false; }
         }
       }
-      const dm = ln.match(/\bdelete(\s*\[\])?\s+([A-Za-z_][A-Za-z0-9_]*)\s*;/);
+      const dm = ln.match(/\bdelete(\s+|\s*\[\s*\]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*;/);
       if (dm && !destructorDeletes.includes(dm[2])) destructorDeletes.push(dm[2]);
       continue;
     }
@@ -62,7 +62,7 @@ window.validators.push(function validate_memory(lines, raw, issues, ctx) {
     }
 
     // ── Delete ──────────────────────────────────────────────────────────
-    const delMatch = ln.match(/\bdelete(\s*\[\])?\s+([A-Za-z_][A-Za-z0-9_]*)\s*;/);
+    const delMatch = ln.match(/\bdelete(\s+|\s*\[\s*\]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*;/);
     if (delMatch) {
       const name = delMatch[2];
       currentFunc.deletes.push(name);
@@ -71,7 +71,7 @@ window.validators.push(function validate_memory(lines, raw, issues, ctx) {
       for (let j = i + 1; j < Math.min(lines.length, i + 8); j++) {
         const next = stripComment(lines[j]).trim();
         if (!next) continue;
-        if (/\bdelete(\s*\[\])?\s+/.test(next)) continue;
+        if (/\bdelete(\s+|\s*\[\s*\]\s*)\w/.test(next)) continue;
         if (/\breturn\s+(EXIT_FAILURE|EXIT_SUCCESS|true|false)\b/.test(next)) permanent = false;
         break;
       }
@@ -89,7 +89,7 @@ window.validators.push(function validate_memory(lines, raw, issues, ctx) {
       // Objects deleted in preceding 6 lines
       const recentDeletes = [];
       for (let k = Math.max(0, i - 6); k < i; k++) {
-        const dm2 = stripComment(lines[k]).match(/\bdelete(\s*\[\])?\s+([A-Za-z_][A-Za-z0-9_]*)\s*;/);
+        const dm2 = stripComment(lines[k]).match(/\bdelete(\s+|\s*\[\s*\]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*;/);
         if (dm2) recentDeletes.push(dm2[2]);
       }
       // Objects guarded by ->isError() check nearby
