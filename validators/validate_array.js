@@ -1,52 +1,68 @@
 // validators/validate_array.js  [P-19]
-// Scope-aware index-guard check. Replaces the "else { addParty }" heuristic.
+// Scope-aware index-guard check with LOOSE guard matching.
 //
-// What it flags: READING an existing element by index, obj->prop[N], when no
-// guard is active.
-// What it does NOT flag (the old false positives):
-//   - add*() calls: obj->addContact()->x, obj->addTax()->y  (they create+return
-//     a valid pointer; `->prop[` never matches a `(` call anyway).
-//   - reads inside if(obj->propNum > -1) / >= 0
-//   - party[idx] inside if(idx > -1) / >= 0
-//   - reads inside a for-loop bounded by the matching Num
-//   - the "else addParty" rule is GONE — a guarded read that's only used inside
-//     its block is correct.
+// A read  obj->prop[index]  is considered guarded if ANY of:
+//   (A) an enclosing/braceless condition has  obj-><anything>Num  compared with
+//       > -1 / >= 0 / != -1 / > 0.  Names need NOT match the property exactly,
+//       because B2BE abbreviates: deliveryDate -> delDateNum, description ->
+//       descNum, etc. Any *Num guard on the same object counts.
+//   (B) the index is a variable and is governed by a check (idx > -1, idx >= 0,
+//       idx != -1) — including the else-branch of  if(idx == -1)  and an
+//       if(idx ...) sitting just above the access before idx is reassigned.
+//   (C) the index variable is bounded by a for-loop (... idx <= ...Num ...).
+//
+// add*() calls are never matched (they create+return a valid pointer), and
+// accesses on an already-indexed receiver (party[idx]->contact[0]) are left
+// alone to avoid noise.
 window.validators.push(function validate_array(lines, raw, issues) {
   const S = window.CppScope;
   const info = S.analyze(lines);
   const code = info.code;
 
-  const countMap = {
-    description: 'descNum', charge: 'chargeNum', contact: 'contactNum',
-    item: 'itemNum', note: 'noteNum', tax: 'taxNum', party: 'partyNum',
-    referenceDetail: 'referenceDetailNum', lineString: 'lineStringNum'
-  };
-
   const accessRe = /\b([A-Za-z_]\w*)->([A-Za-z_]\w*)\s*\[\s*([A-Za-z_]\w*|\d+)\s*\]/g;
+
+  // (A) any  obj-><word>Num  guard, regardless of the exact Num name
+  function numGuarded(i, obj) {
+    const re = new RegExp(`\\b${obj}->\\w*Num\\s*(?:>\\s*-?\\s*1|>=\\s*0|!=\\s*-?\\s*1|>\\s*0)`);
+    return S.guardedBy(info, i, re);
+  }
+
+  // (B) index-variable guard
+  function indexGuarded(i, index) {
+    const cond = new RegExp(`\\b${index}\\s*(?:>\\s*-?\\s*1|>=\\s*0|!=\\s*-?\\s*1)`);
+    if (S.guardedBy(info, i, cond)) return true;
+
+    const enc = info.enclosers[i];
+    const lo = enc.length ? enc[enc.length - 1].open : -1;
+    const condAbove = new RegExp(`\\bif\\s*\\(\\s*${index}\\s*(?:==|!=|>|>=|<|<=)\\s*-?\\s*[01]`);
+    const reassign  = new RegExp(`\\b${index}\\s*=\\s*[^=]`);
+    for (let L = i - 1; L > lo; L--) {
+      if (condAbove.test(code[L])) return true;
+      if (reassign.test(code[L]))  return false;
+    }
+    return false;
+  }
+
+  // (C) for-loop bound on the index
+  function loopGuarded(i, index, obj) {
+    const g1 = new RegExp(`\\bfor\\b.*\\b${index}\\b.*<=?\\s*[A-Za-z_][\\w>:.-]*Num`);
+    if (S.guardedBy(info, i, g1)) return true;
+    const g2 = new RegExp(`\\bfor\\b.*${obj}->\\w*Num`);
+    if (S.guardedBy(info, i, g2)) return true;
+    return false;
+  }
 
   for (let i = 0; i < code.length; i++) {
     accessRe.lastIndex = 0;
     let m;
     while ((m = accessRe.exec(code[i])) !== null) {
       const obj = m[1], prop = m[2], index = m[3];
-      const numProp = countMap[prop] || (prop + 'Num');
 
-      // Guard 1: enclosing/braceless  if(obj->numProp > -1 | >= 0)
-      const numGuard = new RegExp(`\\b${obj}->${numProp}\\s*(?:>\\s*-?\\s*1|>=\\s*0)`);
-      if (S.guardedBy(info, i, numGuard)) continue;
+      if (numGuarded(i, obj)) continue;
 
-      // Guard 2: index is an identifier guarded by if(index > -1 | >= 0)
       if (/^[A-Za-z_]/.test(index)) {
-        const idxGuard = new RegExp(`\\b${index}\\s*(?:>\\s*-?\\s*1|>=\\s*0)`);
-        if (S.guardedBy(info, i, idxGuard)) continue;
-
-        // Guard 3: a for-loop using `index` and bounded by some ...Num
-        const loopGuard = new RegExp(`\\bfor\\b.*\\b${index}\\b.*(?:<=?\\s*[A-Za-z_][\\w>-]*Num|<=?\\s*[A-Za-z_][\\w>-]*->\\w+Num)`);
-        if (S.guardedBy(info, i, loopGuard)) continue;
-
-        // Guard 4: for-loop bounded directly by obj->numProp
-        const loopNum = new RegExp(`\\bfor\\b.*${obj}->${numProp}`);
-        if (S.guardedBy(info, i, loopNum)) continue;
+        if (indexGuarded(i, index)) continue;
+        if (loopGuarded(i, index, obj)) continue;
       }
 
       issues.push({
@@ -55,7 +71,7 @@ window.validators.push(function validate_array(lines, raw, issues) {
         rule: 'P-19',
         line: i + 1,
         snippet: lines[i].trim(),
-        detail: `${obj}->${prop}[${index}] is read without a guard. Add: if(${obj}->${numProp} > -1) { ... } (or check the index variable / bound the loop by ${numProp}).`
+        detail: `${obj}->${prop}[${index}] is read without a guard. Add a check such as if(${obj}->${prop}Num > -1) { ... } (any ${obj}->...Num > -1 guard, an idx > -1 check, or a bounding loop is accepted).`
       });
     }
   }

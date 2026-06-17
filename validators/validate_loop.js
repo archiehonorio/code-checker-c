@@ -1,40 +1,35 @@
-// validate_loop.js  [P-21]
-// Detects reuse of the same loop variable in nested for-loops.
+// validators/validate_loop.js  [P-21]
+// Scope-aware nested-loop variable reuse. Only flags a for-loop whose counter
+// is the SAME as a counter of a loop that actually ENCLOSES it. Sibling loops
+// in different branches reusing `i` are fine (and were the old false positives).
 window.validators.push(function validate_loop(lines, raw, issues) {
-  // Stack of arrays; each entry is the set of loop vars active at that brace depth.
-  const varStack = [[]];  // varStack[depth] = [varName, ...]
+  const S = window.CppScope;
+  const info = S.analyze(lines);
+  const code = info.code;
 
-  for (let i = 0; i < lines.length; i++) {
-    const ln = lines[i];
-    if (/^\s*\/\//.test(ln)) continue;
+  const forVar = /\bfor\s*\(\s*(?:[A-Za-z_][\w:<>]*\s+)?([A-Za-z_]\w*)\s*=/;
 
-    // Detect for(... var = ...) and push variable onto current depth
-    const fm = ln.match(/\bfor\s*\(\s*(?:int\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/);
-    if (fm) {
-      const v = fm[1];
-      // Check if this variable is already active in any outer scope
-      const alreadyActive = varStack.slice(0, -1).some(lvl => lvl.includes(v));
-      if (alreadyActive) {
-        issues.push({
-          type:     'Nested loop – reused variable',
-          severity: 'warning',
-          rule:     'P-21',
-          line:     i + 1,
-          snippet:  ln.trim(),
-          detail:   `Loop variable "${v}" is already used in an outer loop. Use a distinct variable name for each loop level.`
-        });
-      }
-      // Add to top of stack
-      if (varStack.length === 0) varStack.push([]);
-      varStack[varStack.length - 1].push(v);
+  for (let i = 0; i < code.length; i++) {
+    const m = code[i].match(forVar);
+    if (!m) continue;
+    const v = m[1];
+
+    // Look only at ENCLOSING block headers (true ancestors of this line).
+    let reusedFrom = -1;
+    for (const enc of info.enclosers[i]) {
+      const em = enc.header.match(forVar);
+      if (em && em[1] === v) { reusedFrom = enc.open + 1; break; }
     }
 
-    // Track braces to manage depth
-    for (const ch of ln) {
-      if (ch === '{') varStack.push([]);
-      else if (ch === '}') {
-        if (varStack.length > 1) varStack.pop();
-      }
+    if (reusedFrom !== -1) {
+      issues.push({
+        type: 'Nested loop – reused variable',
+        severity: 'warning',
+        rule: 'P-21',
+        line: i + 1,
+        snippet: lines[i].trim(),
+        detail: `Loop variable "${v}" is already used by the enclosing loop at line ${reusedFrom}. Use a distinct counter for each nesting level.`
+      });
     }
   }
 });
