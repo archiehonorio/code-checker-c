@@ -1,117 +1,62 @@
-// validate_array.js  [P-19]
-// Rule 1: getPartyByQualifierIndex result must have an else { addParty(...) } branch,
-//         BUT only when idx (or the qualifier) is used outside the if-block.
-//         If idx/qualifier is only used inside the condition, no addParty is needed.
-// Rule 2: Direct array access [literal] must be guarded by a preceding count check.
+// validators/validate_array.js  [P-19]
+// Scope-aware index-guard check. Replaces the "else { addParty }" heuristic.
+//
+// What it flags: READING an existing element by index, obj->prop[N], when no
+// guard is active.
+// What it does NOT flag (the old false positives):
+//   - add*() calls: obj->addContact()->x, obj->addTax()->y  (they create+return
+//     a valid pointer; `->prop[` never matches a `(` call anyway).
+//   - reads inside if(obj->propNum > -1) / >= 0
+//   - party[idx] inside if(idx > -1) / >= 0
+//   - reads inside a for-loop bounded by the matching Num
+//   - the "else addParty" rule is GONE — a guarded read that's only used inside
+//     its block is correct.
 window.validators.push(function validate_array(lines, raw, issues) {
+  const S = window.CppScope;
+  const info = S.analyze(lines);
+  const code = info.code;
 
-  // ── RULE 1: Party index guard ───────────────────────────────────────────
-  const getIdxCall  = /([A-Za-z_][A-Za-z0-9_]*)->partyDetails->getPartyByQualifierIndex\s*\(\s*Party::([A-Za-z_]+)\s*\)/;
-  const addPartyCall = /->partyDetails->addParty\s*\(/;
-
-  for (let i = 0; i < lines.length; i++) {
-    const match = lines[i].match(getIdxCall);
-    if (!match) continue;
-
-    const qualifier = match[2];
-    let idxIfStart = -1, idxIfEnd = -1;
-
-    // Find "if (idx > -1)"
-    for (let j = i + 1; j < Math.min(lines.length, i + 10); j++) {
-      const t = lines[j].trim();
-      if (/^if\s*\(\s*idx\s*[>!]=?\s*-?\d/.test(t)) {
-        idxIfStart = j;
-        if (t.includes('{')) {
-          let depth = 0;
-          for (let k = j; k < lines.length; k++) {
-            for (const ch of lines[k]) { if (ch === '{') depth++; else if (ch === '}') depth--; }
-            if (depth === 0 && k > j) { idxIfEnd = k; break; }
-          }
-        } else {
-          idxIfEnd = j + 1;
-        }
-        break;
-      }
-    }
-    if (idxIfStart === -1 || idxIfEnd === -1) continue;
-
-    // Look for else { addParty } after the block
-    let elseFound = false;
-    for (let j = idxIfEnd; j < Math.min(lines.length, idxIfEnd + 8); j++) {
-      if (/^\s*else\b/.test(lines[j])) {
-        for (let k = j; k < Math.min(lines.length, j + 8); k++) {
-          if (addPartyCall.test(lines[k])) { elseFound = true; break; }
-        }
-        break;
-      }
-    }
-
-    // Only flag if idx or the qualifier is referenced OUTSIDE the if-block.
-    // If they're only used inside, missing addParty is harmless.
-    let usedOutside = false;
-    if (!elseFound) {
-      const outerLimit = Math.min(lines.length, idxIfEnd + 20);
-      for (let j = idxIfEnd + 1; j < outerLimit; j++) {
-        const t = lines[j].trim();
-        if (/^\s*(if|for|while|return|\/\/)/.test(t) && !/\bidx\b/.test(t) && !new RegExp(`\\bParty::${qualifier}\\b`).test(t)) break;
-        if (/\bidx\b/.test(t) || new RegExp(`\\bParty::${qualifier}\\b`).test(t)) {
-          usedOutside = true;
-          break;
-        }
-      }
-    }
-
-    if (!elseFound && usedOutside) {
-      issues.push({
-        type:       'Party – missing else addParty',
-        severity:   'warning',
-        rule:       'P-19',
-        line:       idxIfStart + 1,
-        snippet:    lines[idxIfStart].trim(),
-        detail:     `getPartyByQualifierIndex for Party::${qualifier}: idx is used outside the if-block but there is no else { addParty(...) } branch to guarantee a valid index.`,
-        fix:        `else { ->partyDetails->addParty(Party::${qualifier}); }`
-      });
-    }
-  }
-
-  // ── RULE 2: Unguarded numeric array index ──────────────────────────────
-  // Only flag direct numeric literals: obj->arr[0], obj->arr[1], etc.
-  const numIdxPattern = /\b([A-Za-z_][A-Za-z0-9_]*)->([A-Za-z_]+)\s*\[\s*(\d+)\s*\]/g;
   const countMap = {
     description: 'descNum', charge: 'chargeNum', contact: 'contactNum',
-    item: 'itemNum', note: 'noteNum', tax: 'taxNum', party: 'partyNum'
+    item: 'itemNum', note: 'noteNum', tax: 'taxNum', party: 'partyNum',
+    referenceDetail: 'referenceDetailNum', lineString: 'lineStringNum'
   };
 
-  for (let i = 0; i < lines.length; i++) {
-    if (/^\s*\/\//.test(lines[i])) continue;
-    numIdxPattern.lastIndex = 0;
+  const accessRe = /\b([A-Za-z_]\w*)->([A-Za-z_]\w*)\s*\[\s*([A-Za-z_]\w*|\d+)\s*\]/g;
+
+  for (let i = 0; i < code.length; i++) {
+    accessRe.lastIndex = 0;
     let m;
-    while ((m = numIdxPattern.exec(lines[i])) !== null) {
-      const obj  = m[1];
-      const prop = m[2];
-      const idx  = m[3];
+    while ((m = accessRe.exec(code[i])) !== null) {
+      const obj = m[1], prop = m[2], index = m[3];
       const numProp = countMap[prop] || (prop + 'Num');
 
-      // Look backwards up to 20 lines for a guard: if (obj->numProp > -1) or if (obj->numProp >= 0)
-      let guarded = false;
-      for (let j = i - 1; j >= Math.max(0, i - 20); j--) {
-        const t = lines[j].trim();
-        if (/^\s*if\s*\(/.test(t) || /^\s*for\s*\(/.test(t)) {
-          if (new RegExp(`\\b${obj}->${numProp}\\b`).test(t)) { guarded = true; }
-          break;
-        }
+      // Guard 1: enclosing/braceless  if(obj->numProp > -1 | >= 0)
+      const numGuard = new RegExp(`\\b${obj}->${numProp}\\s*(?:>\\s*-?\\s*1|>=\\s*0)`);
+      if (S.guardedBy(info, i, numGuard)) continue;
+
+      // Guard 2: index is an identifier guarded by if(index > -1 | >= 0)
+      if (/^[A-Za-z_]/.test(index)) {
+        const idxGuard = new RegExp(`\\b${index}\\s*(?:>\\s*-?\\s*1|>=\\s*0)`);
+        if (S.guardedBy(info, i, idxGuard)) continue;
+
+        // Guard 3: a for-loop using `index` and bounded by some ...Num
+        const loopGuard = new RegExp(`\\bfor\\b.*\\b${index}\\b.*(?:<=?\\s*[A-Za-z_][\\w>-]*Num|<=?\\s*[A-Za-z_][\\w>-]*->\\w+Num)`);
+        if (S.guardedBy(info, i, loopGuard)) continue;
+
+        // Guard 4: for-loop bounded directly by obj->numProp
+        const loopNum = new RegExp(`\\bfor\\b.*${obj}->${numProp}`);
+        if (S.guardedBy(info, i, loopNum)) continue;
       }
 
-      if (!guarded) {
-        issues.push({
-          type:     'Array – unguarded index access',
-          severity: 'warning',
-          rule:     'P-19',
-          line:     i + 1,
-          snippet:  lines[i].trim(),
-          detail:   `${obj}->${prop}[${idx}] is accessed without a preceding guard: if (${obj}->${numProp} > -1).`
-        });
-      }
+      issues.push({
+        type: 'Array – unguarded index access',
+        severity: 'error',
+        rule: 'P-19',
+        line: i + 1,
+        snippet: lines[i].trim(),
+        detail: `${obj}->${prop}[${index}] is read without a guard. Add: if(${obj}->${numProp} > -1) { ... } (or check the index variable / bound the loop by ${numProp}).`
+      });
     }
   }
 });
