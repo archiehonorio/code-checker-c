@@ -9,9 +9,9 @@
   --bg:      #0e0e0d;   /* near-black, faintly warm */
   --panel:   #131211;
   --border:  #242320;   /* hairline */
-  --text:    #e7e4db;   /* warm off-white */
-  --muted:   #8b887d;
-  --faint:   #57544b;   /* line numbers, punctuation */
+  --text:    #efece4;   /* warm off-white */
+  --muted:   #c3c0b6;   /* lighter secondary text — labels, meta, snippets */
+  --faint:   #8d8a80;   /* line numbers */
   --accent:  #c2a15e;   /* muted gold — the one accent */
   --accent-soft: rgba(194,161,94,0.12);
 
@@ -175,7 +175,7 @@ button:focus-visible, .flt:focus-visible { outline: 2px solid var(--accent); out
   font-family: inherit; font-size: 11.5px; color: var(--muted);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
 }
-.issue-detail { font-size: 12px; color: #a8a499; margin-top: 5px; line-height: 1.55; }
+.issue-detail { font-size: 12px; color: #ddd9d0; margin-top: 5px; line-height: 1.55; }
 .btn-goto {
   margin-top: 7px; padding: 3px 10px; font-size: 11px; border-radius: 4px;
   background: transparent; color: var(--muted); border: 1px solid var(--border);
@@ -193,8 +193,8 @@ button:focus-visible, .flt:focus-visible { outline: 2px solid var(--accent); out
 }
 .btn-copy-fix:hover { color: var(--accent); border-color: var(--accent); }
 
-/* ── Punctuation: single quiet colour, no rainbow ── */
-.brace, .paren, .bracket { color: var(--faint); }
+/* ── Punctuation: same readable colour as the code, no rainbow ── */
+.brace, .paren, .bracket { color: var(--text); }
 
 /* ── Scrollbars ── */
 ::-webkit-scrollbar { width: 9px; height: 9px; }
