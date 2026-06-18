@@ -6,19 +6,19 @@
 <title>code-checker-c</title>
 <style>
 :root {
-  --bg:      #0e0e0d;   /* near-black, faintly warm */
-  --panel:   #131211;
-  --border:  #242320;   /* hairline */
-  --text:    #efece4;   /* warm off-white */
-  --muted:   #c3c0b6;   /* lighter secondary text — labels, meta, snippets */
-  --faint:   #8d8a80;   /* line numbers */
-  --accent:  #c2a15e;   /* muted gold — the one accent */
-  --accent-soft: rgba(194,161,94,0.12);
+  --bg:      #0b1220;   /* original navy */
+  --panel:   #0a1830;
+  --border:  rgba(255,255,255,0.08);
+  --text:    #e6eef6;
+  --muted:   #a9b6c8;   /* readable secondary text */
+  --faint:   #6f7d92;   /* line numbers */
+  --accent:  #7dd3fc;   /* cyan — original accent, used flat */
+  --accent-soft: rgba(125,211,252,0.12);
 
-  --err:   #cd8470;     /* muted terracotta */
-  --warn:  #c8a85c;     /* dusty gold */
-  --info:  #8c9ca0;     /* muted slate (suggestions) */
-  --ok:    #93a988;     /* muted sage */
+  --err:   #ff7b72;
+  --warn:  #f0c55e;
+  --info:  #7dd3fc;     /* suggestions */
+  --ok:    #66e07f;
 }
 
 * { box-sizing: border-box; }
@@ -88,7 +88,7 @@ textarea {
   padding: 12px;
   border: 1px solid var(--border);
   border-radius: 5px;
-  background: #0a0a09;
+  background: #081326;
   color: var(--text);
   font-family: inherit;
   font-size: 12.5px;
@@ -103,9 +103,9 @@ textarea:focus { border-color: var(--accent); }
 button { font-family: inherit; cursor: pointer; font-size: 12px; transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease; }
 .btn-run {
   padding: 8px 18px; border: none; border-radius: 5px;
-  background: var(--accent); color: #1b1810; font-weight: 600;
+  background: var(--accent); color: #052233; font-weight: 600;
 }
-.btn-run:hover { background: #cdac68; }
+.btn-run:hover { background: #9adcfd; }
 .btn-clear {
   padding: 8px 14px; border: 1px solid var(--border); border-radius: 5px;
   background: transparent; color: var(--muted);
@@ -175,7 +175,7 @@ button:focus-visible, .flt:focus-visible { outline: 2px solid var(--accent); out
   font-family: inherit; font-size: 11.5px; color: var(--muted);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
 }
-.issue-detail { font-size: 12px; color: #ddd9d0; margin-top: 5px; line-height: 1.55; }
+.issue-detail { font-size: 12px; color: #cdd6e2; margin-top: 5px; line-height: 1.55; }
 .btn-goto {
   margin-top: 7px; padding: 3px 10px; font-size: 11px; border-radius: 4px;
   background: transparent; color: var(--muted); border: 1px solid var(--border);
@@ -198,7 +198,7 @@ button:focus-visible, .flt:focus-visible { outline: 2px solid var(--accent); out
 
 /* ── Scrollbars ── */
 ::-webkit-scrollbar { width: 9px; height: 9px; }
-::-webkit-scrollbar-thumb { background: #2c2b27; border-radius: 5px; }
+::-webkit-scrollbar-thumb { background: #1d2a3e; border-radius: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 
 /* ── Responsive ── */
